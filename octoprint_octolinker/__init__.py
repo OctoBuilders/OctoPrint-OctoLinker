@@ -2,65 +2,68 @@
 from __future__ import absolute_import
 
 import octoprint.plugin
+import requests
+import yaml
 
-class OctolinkerPlugin(octoprint.plugin.StartupPlugin):
+class OctolinkerPlugin(octoprint.plugin.StartupPlugin,
+                       octoprint.plugin.EventHandlerPlugin):
+
+    # ~~ StartupPlugin
+
     def on_after_startup(self):
-        self._logger.info("Hello World!")
-# class OctolinkerPlugin(octoprint.plugin.SettingsPlugin,
-#                        octoprint.plugin.AssetPlugin,
-#                        octoprint.plugin.TemplatePlugin):
-#
-# 	##~~ SettingsPlugin mixin
-#
-# 	def get_settings_defaults(self):
-# 		return dict(
-# 			# put your plugin's default settings here
-# 		)
-#
-# 	##~~ AssetPlugin mixin
-#
-# 	def get_assets(self):
-# 		# Define your plugin's asset files to automatically include in the
-# 		# core UI here.
-# 		return dict(
-# 			js=["js/octolinker.js"],
-# 			css=["css/octolinker.css"],
-# 			less=["less/octolinker.less"]
-# 		)
-#
-# 	##~~ Softwareupdate hook
-#
-# 	def get_update_information(self):
-# 		# Define the configuration for your plugin to use with the Software Update
-# 		# Plugin here. See https://github.com/foosel/OctoPrint/wiki/Plugin:-Software-Update
-# 		# for details.
-# 		return dict(
-# 			octolinker=dict(
-# 				displayName="OctoLinker Plugin",
-# 				displayVersion=self._plugin_version,
-#
-# 				# version check: github repository
-# 				type="github_release",
-# 				user="OctoBuilders",
-# 				repo="OctoPrint-OctoLinker",
-# 				current=self._plugin_version,
-#
-# 				pip="https://github.com/OctoBuilders/OctoPrint-OctoLinker/archive/{target_version}.zip"
-# 			)
-# 		)
+        """
+        Not used.
+        """
+        pass
+
+    def on_startup(self, host, port):
+        """
+        Used to tell OctoLink that the printer is online, and pass
+        its API key
+        """
+        try:
+            key = {'key': 'none'}
+
+            with open("/home/tom/.octoprint/config.yaml", 'r') as stream:
+                yml = yaml.load(stream)
+                key = yml['api']
+
+            requests.post("http://127.0.0.1:5001/printers", json=key)
+            self._logger.info("Posted self to OctoLink")
+
+        except requests.exceptions.ConnectionError:
+            self._logger.info("Not connected to OctoLink: Could not connect.")
+        except FileNotFoundError:
+            self._logger.info("Not connected to OctoLink: Could not read config file.")
 
 
-# If you want your plugin to be registered within OctoPrint under a different name than what you defined in setup.py
-# ("OctoPrint-PluginSkeleton"), you may define that here. Same goes for the other metadata derived from setup.py that
-# can be overwritten via __plugin_xyz__ control properties. See the documentation for that.
+
+    # ~~ EventHandlerPlugin
+
+    def on_event(self, event, payload):
+        """
+        Used to catch the `PrintDone` Event.
+        """
+        if (event =='PrintDone'):
+            payload = {'status': event, 'message': 'Print is complete'}
+            try:
+                requests.post('http://127.0.0.1:5001/print_status', json=payload)
+                self._logger.info("Posted PrintDone to OctoLink.")
+
+            except requests.exceptions.ConnectionError:
+                self._logger.info("Not post status to OctoLink: Could not connect.")
+
+
+        if (event == 'PrintCancelled'):
+            payload = {'status': event, 'message': 'Print was canceled'}
+            try:
+                requests.post('http://127.0.0.1:5001/print_status', json=payload)
+                self._logger.info("Posted PrintCancelled to OctoLink.")
+
+            except requests.exceptions.ConnectionError:
+                self._logger.info("Not post status to OctoLink: Could not connect.")
+
+
+
 __plugin_name__ = "OctoLinker Plugin"
 __plugin_implementation__ = OctolinkerPlugin()
-
-# def __plugin_load__():
-# 	global __plugin_implementation__
-# 	__plugin_implementation__ = OctolinkerPlugin()
-#
-# 	global __plugin_hooks__
-# 	__plugin_hooks__ = {
-# 		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information
-# 	}
